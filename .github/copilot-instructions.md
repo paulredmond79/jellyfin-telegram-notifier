@@ -65,7 +65,8 @@ This is a Flask-based webhook application that sends Telegram notifications when
 ### Configuration
 
 - All configuration via environment variables
-- Required variables: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `JELLYFIN_BASE_URL`, `JELLYFIN_API_KEY`, `YOUTUBE_API_KEY`, `EPISODE_PREMIERED_WITHIN_X_DAYS`, `SEASON_ADDED_WITHIN_X_DAYS`
+- **Required variables**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `JELLYFIN_BASE_URL`, `JELLYFIN_API_KEY`, `EPISODE_PREMIERED_WITHIN_X_DAYS`, `SEASON_ADDED_WITHIN_X_DAYS`
+- **Optional variables**: `YOUTUBE_API_KEY` (for fetching movie trailer URLs from YouTube)
 - Use `python-dotenv` for local development
 - Docker deployment uses environment variables passed via docker-compose
 
@@ -113,7 +114,7 @@ This is a Flask-based webhook application that sends Telegram notifications when
 Runtime
 {runtime}
 
-[🎥][Trailer]({trailer_url})
+[🎥]({trailer_url})[Trailer]({trailer_url})
 ```
 
 **Seasons**:
