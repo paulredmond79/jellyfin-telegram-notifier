@@ -1,4 +1,5 @@
 """Test configuration and fixtures."""
+
 import os
 import json
 import pytest

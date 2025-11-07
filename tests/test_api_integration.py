@@ -1,4 +1,5 @@
 """Unit tests for API integration functions."""
+
 import pytest
 from unittest.mock import patch, Mock
 from requests.exceptions import HTTPError

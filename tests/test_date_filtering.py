@@ -1,4 +1,5 @@
 """Unit tests for date filtering functions."""
+
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import patch

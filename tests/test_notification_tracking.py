@@ -1,4 +1,5 @@
 """Unit tests for notification tracking functions."""
+
 import pytest
 import json
 from unittest.mock import patch

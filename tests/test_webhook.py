@@ -1,4 +1,5 @@
 """Integration tests for webhook endpoint."""
+
 import pytest
 import json
 from unittest.mock import patch, Mock
