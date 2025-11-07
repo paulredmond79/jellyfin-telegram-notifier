@@ -7,23 +7,30 @@ import requests
 from requests.exceptions import HTTPError
 from flask import Flask, request
 from dotenv import load_dotenv
+import tempfile
 
 load_dotenv()
 
 app = Flask(__name__)
 
 # Set up logging
-log_directory = '/app/log'
-log_filename = os.path.join(log_directory, 'jellyfin_telegram-notifier.log')
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log_directory = os.environ.get("LOG_DIRECTORY", "/app/log")
+log_filename = os.path.join(log_directory, "jellyfin_telegram-notifier.log")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Ensure the log directory exists
-os.makedirs(log_directory, exist_ok=True)
+try:
+    os.makedirs(log_directory, exist_ok=True)
+except (PermissionError, OSError):
+    # In test environment, we may not have permission to create /app/log
+    # Use a temporary directory instead
+    log_directory = tempfile.mkdtemp()
+    log_filename = os.path.join(log_directory, "jellyfin_telegram-notifier.log")
 
 # Create a handler for rotating log files daily
 rotating_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7)
 rotating_handler.setLevel(logging.INFO)
-rotating_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+rotating_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 
 # Add the rotating handler to the logger
 logging.getLogger().addHandler(rotating_handler)
@@ -39,20 +46,31 @@ EPISODE_PREMIERED_WITHIN_X_DAYS = int(os.environ["EPISODE_PREMIERED_WITHIN_X_DAY
 SEASON_ADDED_WITHIN_X_DAYS = int(os.environ["SEASON_ADDED_WITHIN_X_DAYS"])
 
 # Path for the JSON file to store notified items
-notified_items_file = '/app/data/notified_items.json'
+notified_items_file = os.environ.get("NOTIFIED_ITEMS_FILE", "/app/data/notified_items.json")
+
+# Ensure the data directory exists
+data_directory = os.path.dirname(notified_items_file)
+try:
+    os.makedirs(data_directory, exist_ok=True)
+except (PermissionError, OSError):
+    # In test environment, use a temporary file
+    fd, notified_items_file = tempfile.mkstemp(suffix=".json")
+    # Initialize with empty JSON object
+    os.write(fd, b"{}")
+    os.close(fd)  # Close the file descriptor, we'll use the path
 
 
 # Function to load notified items from the JSON file
 def load_notified_items():
     if os.path.exists(notified_items_file):
-        with open(notified_items_file, 'r') as file:
+        with open(notified_items_file, "r") as file:
             return json.load(file)
     return {}
 
 
 # Function to save notified items to the JSON file
 def save_notified_items(notified_items_to_save):
-    with open(notified_items_file, 'w') as file:
+    with open(notified_items_file, "w") as file:
         json.dump(notified_items_to_save, file)
 
 
@@ -68,20 +86,20 @@ def send_telegram_photo(photo_id, caption):
 
     # Upload the image to the Telegram bot
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    data = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "caption": caption,
-        "parse_mode": "Markdown"
-    }
+    data = {"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "parse_mode": "Markdown"}
 
-    files = {'photo': ('photo.jpg', image_response.content, 'image/jpeg')}
+    files = {"photo": ("photo.jpg", image_response.content, "image/jpeg")}
     response = requests.post(url, data=data, files=files)
     return response
 
 
 def get_item_details(item_id):
-    headers = {'accept': 'application/json', }
-    params = {'api_key': JELLYFIN_API_KEY, }
+    headers = {
+        "accept": "application/json",
+    }
+    params = {
+        "api_key": JELLYFIN_API_KEY,
+    }
     url = f"{JELLYFIN_BASE_URL}/emby/Items?Recursive=true&Fields=DateCreated, Overview&Ids={item_id}"
     response = requests.get(url, headers=headers, params=params)
     response.raise_for_status()  # Check if request was successful
@@ -104,17 +122,13 @@ def get_youtube_trailer_url(query):
         return None
     api_key = YOUTUBE_API_KEY
 
-    params = {
-        'part': 'snippet',
-        'q': query,
-        'type': 'video',
-        'key': api_key
-    }
+    params = {"part": "snippet", "q": query, "type": "video", "key": api_key}
 
     response = requests.get(base_search_url, params=params)
     response.raise_for_status()  # Check for HTTP errors before processing the data
     response_data = response.json()
-    video_id = response_data.get("items", [{}])[0].get('id', {}).get('videoId')
+    items = response_data.get("items", [])
+    video_id = items[0].get("id", {}).get("videoId") if items else None
 
     return f"https://www.youtube.com/watch?v={video_id}" if video_id else "Video not found!"
 
@@ -165,15 +179,15 @@ def announce_new_releases_from_jellyfin():
 
                 notification_message = (
                     f"*🍿New Movie Added🍿*\n\n*{movie_name_cleaned}* *({release_year})*\n\n{overview}\n\n"
-                    f"Runtime\n{runtime}")
+                    f"Runtime\n{runtime}"
+                )
 
                 if trailer_url:
                     notification_message += f"\n\n[🎥]({trailer_url})[Trailer]({trailer_url})"
 
                 send_telegram_photo(movie_id, notification_message)
                 mark_item_as_notified(item_type, item_name, release_year)
-                logging.info(f"(Movie) {movie_name} {release_year} "
-                             f"notification was sent to telegram.")
+                logging.info(f"(Movie) {movie_name} {release_year} " f"notification was sent to telegram.")
                 return "Movie notification was sent to telegram"
 
         if item_type == "Season":
@@ -187,24 +201,27 @@ def announce_new_releases_from_jellyfin():
                 series_name_cleaned = series_name.replace(f" ({release_year})", "").strip()
 
                 # Get series overview if season overview is empty
-                overview_to_use = payload.get("Overview") if payload.get("Overview") else series_details["Items"][0].get(
-                    "Overview")
+                overview_to_use = (
+                    payload.get("Overview") if payload.get("Overview") else series_details["Items"][0].get("Overview")
+                )
 
                 notification_message = (
                     f"*New Season Added*\n\n*{series_name_cleaned}* *({release_year})*\n\n"
-                    f"*{season}*\n\n{overview_to_use}\n\n")
+                    f"*{season}*\n\n{overview_to_use}\n\n"
+                )
 
                 response = send_telegram_photo(season_id, notification_message)
 
                 if response.status_code == 200:
                     mark_item_as_notified(item_type, item_name, release_year)
-                    logging.info(f"(Season) {series_name_cleaned} {season} "
-                                 f"notification was sent to telegram.")
+                    logging.info(f"(Season) {series_name_cleaned} {season} " f"notification was sent to telegram.")
                     return "Season notification was sent to telegram"
                 else:
                     send_telegram_photo(series_id, notification_message)
                     mark_item_as_notified(item_type, item_name, release_year)
-                    logging.warning(f"{series_name_cleaned} {season} image does not exists, falling back to series image")
+                    logging.warning(
+                        f"{series_name_cleaned} {season} image does not exists, " f"falling back to series image"
+                    )
                     logging.info(f"(Season) {series_name_cleaned} {season} notification was sent to telegram")
                     return "Season notification was sent to telegram"
 
@@ -221,15 +238,19 @@ def announce_new_releases_from_jellyfin():
                 overview = payload.get("Overview")
 
                 if not is_not_within_last_x_days(season_date_created, SEASON_ADDED_WITHIN_X_DAYS):
-                    logging.info(f"(Episode) {series_name} Season {season_num} "
-                                 f"was added within the last {SEASON_ADDED_WITHIN_X_DAYS} "
-                                 f"days. Not sending notification.")
-                    return (f"Season was added within the last {SEASON_ADDED_WITHIN_X_DAYS} "
-                            f"days. Not sending notification.")
+                    logging.info(
+                        f"(Episode) {series_name} Season {season_num} "
+                        f"was added within the last {SEASON_ADDED_WITHIN_X_DAYS} "
+                        f"days. Not sending notification."
+                    )
+                    return (
+                        f"Season was added within the last {SEASON_ADDED_WITHIN_X_DAYS} "
+                        f"days. Not sending notification."
+                    )
 
-                if episode_premiere_date and is_within_last_x_days(episode_premiere_date,
-                                                                   EPISODE_PREMIERED_WITHIN_X_DAYS):
-
+                if episode_premiere_date and is_within_last_x_days(
+                    episode_premiere_date, EPISODE_PREMIERED_WITHIN_X_DAYS
+                ):
                     notification_message = (
                         f"*New Episode Added*\n\n*Release Date*: {episode_premiere_date}\n\n*Series*: {series_name} *S*"
                         f"{season_num}*E*{season_epi}\n*Episode Title*: {epi_name}\n\n{overview}\n\n"
@@ -238,22 +259,31 @@ def announce_new_releases_from_jellyfin():
 
                     if response.status_code == 200:
                         mark_item_as_notified(item_type, item_name, release_year)
-                        logging.info(f"(Episode) {series_name} S{season_num}E{season_epi} notification sent to Telegram!")
+                        logging.info(
+                            f"(Episode) {series_name} S{season_num}E{season_epi} " f"notification sent to Telegram!"
+                        )
                         return "Notification sent to Telegram!"
                     else:
                         send_telegram_photo(series_id, notification_message)
-                        logging.warning(f"(Episode) {series_name} season image does not exists, "
-                                        f"falling back to series image")
+                        logging.warning(
+                            f"(Episode) {series_name} season image does not exists, " f"falling back to series image"
+                        )
                         mark_item_as_notified(item_type, item_name, release_year)
-                        logging.info(f"(Episode) {series_name} S{season_num}E{season_epi} notification sent to Telegram!")
+                        logging.info(
+                            f"(Episode) {series_name} S{season_num}E{season_epi} " f"notification sent to Telegram!"
+                        )
                         return "Notification sent to Telegram!"
 
                 else:
-                    logging.info(f"(Episode) {series_name} S{season_num}E{season_epi} "
-                                 f"was premiered more than {EPISODE_PREMIERED_WITHIN_X_DAYS} "
-                                 f"days ago. Not sending notification.")
-                    return (f"Episode was added more than {EPISODE_PREMIERED_WITHIN_X_DAYS} "
-                            f"days ago. Not sending notification.")
+                    logging.info(
+                        f"(Episode) {series_name} S{season_num}E{season_epi} "
+                        f"was premiered more than {EPISODE_PREMIERED_WITHIN_X_DAYS} "
+                        f"days ago. Not sending notification."
+                    )
+                    return (
+                        f"Episode was added more than {EPISODE_PREMIERED_WITHIN_X_DAYS} "
+                        f"days ago. Not sending notification."
+                    )
 
         if item_type == "Movie":
             logging.info(f"(Movie) {item_name} Notification Was Already Sent")
@@ -262,7 +292,7 @@ def announce_new_releases_from_jellyfin():
         elif item_type == "Episode":
             logging.info(f"(Episode) {series_name} S{season_num}E{season_epi} Notification Was Already Sent")
         else:
-            logging.error('Item type not supported')
+            logging.error("Item type not supported")
         return "Item type not supported."
 
     # Handle specific HTTP errors
