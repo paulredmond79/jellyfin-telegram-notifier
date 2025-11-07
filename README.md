@@ -9,6 +9,7 @@ A simple Flask application that sends notifications to Telegram whenever new con
 - Sends Telegram notifications with media images whenever a new movie, series, season, or episode is added to Jellyfin.
 - Integrates with the Jellyfin webhook plugin.
 - Provides a filter to notify only for recent episodes or newly added seasons.
+- Supports multiple architectures: amd64 and arm64 (aarch64).
 
 ## Prerequisites
 
@@ -74,6 +75,16 @@ If you want to fetch YouTube trailer URLs for movies, you can set up a YouTube A
    - Click on "Create Credentials" and select "API Key".
 5. Copy the generated API key.
 6. Set the `YOUTUBE_API_KEY` environment variable in your `.env` file to the copied API key.
+
+## CI/CD and Multi-Architecture Support
+
+This project includes a GitHub Actions workflow that automatically builds and validates the Docker image for multiple architectures:
+
+- **Supported Platforms**: linux/amd64, linux/arm64 (aarch64)
+- **Workflow Triggers**: Push to main/develop branches, pull requests, and manual dispatch
+- **Build Process**: Uses Docker Buildx with QEMU for cross-platform builds
+
+The CI workflow ensures that the Docker image can be successfully built for both x86_64 and ARM64 architectures, making it compatible with a wide range of devices including Raspberry Pi, AWS Graviton instances, and Apple Silicon Macs.
 
 ## Contributing
 
