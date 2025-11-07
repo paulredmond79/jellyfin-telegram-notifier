@@ -33,6 +33,37 @@ If you have Docker and Docker Compose installed, you can use the provided `docke
 1. Set up your environment variables in a `.env` file.
 2. Run `docker-compose up`.
 
+### Build and Push Script
+
+The repository includes a bash script (`build-and-push.sh`) that automates the process of building and pushing Docker images to a local registry. This script:
+
+1. Downloads the latest version of the repository using GitHub CLI (or falls back to git clone)
+2. Builds the Docker image
+3. Applies multiple tags (latest, version, commit hash)
+4. Pushes the image to a local Docker registry
+
+**Prerequisites:**
+- GitHub CLI (`gh`) installed (optional, will fallback to git if not authenticated)
+- Docker installed
+- Local Docker registry running (e.g., `docker run -d -p 5000:5000 --name registry registry:2`)
+
+**Usage:**
+```bash
+# Run the full build and push process
+./build-and-push.sh
+
+# Test without actually building or pushing (dry-run mode)
+./build-and-push.sh --dry-run
+
+# Show help
+./build-and-push.sh --help
+```
+
+The script will create tags for:
+- `localhost:5000/jellyfin-telegram-notifier:latest`
+- `localhost:5000/jellyfin-telegram-notifier:<version>`
+- `localhost:5000/jellyfin-telegram-notifier:<commit-hash>`
+
 ## Setting Up a Telegram Bot
 
 1. Start a Chat with BotFather on Telegram.
