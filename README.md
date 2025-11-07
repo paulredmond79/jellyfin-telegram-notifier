@@ -88,6 +88,18 @@ The script will create tags for:
 
 #### Environment Variables Explanation:
 
+- **`PUID`** (Docker only, default: 1000):
+  User ID for the application to run as. Set this to match your host user's UID to avoid permission issues with mounted volumes.
+
+- **`PGID`** (Docker only, default: 1000):
+  Group ID for the application to run as. Set this to match your host user's GID to avoid permission issues with mounted volumes.
+
+- **`UMASK`** (Docker only, default: 002):
+  Controls the default file creation permissions. A value of `002` allows group write access, while `022` restricts write access to the owner only.
+
+- **`TZ`** (Docker only, default: Etc/UTC):
+  Timezone for the container. Examples: `America/New_York`, `Europe/London`, `Asia/Tokyo`.
+
 - **`EPISODE_PREMIERED_WITHIN_X_DAYS`**:
   Determines how recent an episode's premiere date must be for a notification to be sent. For example, setting it to `7` means only episodes that premiered within the last 7 days will trigger a notification.
 
