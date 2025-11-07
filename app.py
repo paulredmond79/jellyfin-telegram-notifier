@@ -13,12 +13,19 @@ load_dotenv()
 app = Flask(__name__)
 
 # Set up logging
-log_directory = '/app/log'
+log_directory = os.environ.get('LOG_DIRECTORY', '/app/log')
 log_filename = os.path.join(log_directory, 'jellyfin_telegram-notifier.log')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Ensure the log directory exists
-os.makedirs(log_directory, exist_ok=True)
+try:
+    os.makedirs(log_directory, exist_ok=True)
+except (PermissionError, OSError):
+    # In test environment, we may not have permission to create /app/log
+    # Use a temporary directory instead
+    import tempfile
+    log_directory = tempfile.mkdtemp()
+    log_filename = os.path.join(log_directory, 'jellyfin_telegram-notifier.log')
 
 # Create a handler for rotating log files daily
 rotating_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7)
@@ -39,7 +46,16 @@ EPISODE_PREMIERED_WITHIN_X_DAYS = int(os.environ["EPISODE_PREMIERED_WITHIN_X_DAY
 SEASON_ADDED_WITHIN_X_DAYS = int(os.environ["SEASON_ADDED_WITHIN_X_DAYS"])
 
 # Path for the JSON file to store notified items
-notified_items_file = '/app/data/notified_items.json'
+notified_items_file = os.environ.get('NOTIFIED_ITEMS_FILE', '/app/data/notified_items.json')
+
+# Ensure the data directory exists
+data_directory = os.path.dirname(notified_items_file)
+try:
+    os.makedirs(data_directory, exist_ok=True)
+except (PermissionError, OSError):
+    # In test environment, use a temporary file
+    import tempfile
+    notified_items_file = tempfile.mktemp(suffix='.json')
 
 
 # Function to load notified items from the JSON file
@@ -114,7 +130,8 @@ def get_youtube_trailer_url(query):
     response = requests.get(base_search_url, params=params)
     response.raise_for_status()  # Check for HTTP errors before processing the data
     response_data = response.json()
-    video_id = response_data.get("items", [{}])[0].get('id', {}).get('videoId')
+    items = response_data.get("items", [])
+    video_id = items[0].get('id', {}).get('videoId') if items else None
 
     return f"https://www.youtube.com/watch?v={video_id}" if video_id else "Video not found!"
 
@@ -187,8 +204,10 @@ def announce_new_releases_from_jellyfin():
                 series_name_cleaned = series_name.replace(f" ({release_year})", "").strip()
 
                 # Get series overview if season overview is empty
-                overview_to_use = payload.get("Overview") if payload.get("Overview") else series_details["Items"][0].get(
-                    "Overview")
+                overview_to_use = (
+                    payload.get("Overview") if payload.get("Overview")
+                    else series_details["Items"][0].get("Overview")
+                )
 
                 notification_message = (
                     f"*New Season Added*\n\n*{series_name_cleaned}* *({release_year})*\n\n"
@@ -204,7 +223,10 @@ def announce_new_releases_from_jellyfin():
                 else:
                     send_telegram_photo(series_id, notification_message)
                     mark_item_as_notified(item_type, item_name, release_year)
-                    logging.warning(f"{series_name_cleaned} {season} image does not exists, falling back to series image")
+                    logging.warning(
+                        f"{series_name_cleaned} {season} image does not exists, "
+                        f"falling back to series image"
+                    )
                     logging.info(f"(Season) {series_name_cleaned} {season} notification was sent to telegram")
                     return "Season notification was sent to telegram"
 
@@ -238,14 +260,22 @@ def announce_new_releases_from_jellyfin():
 
                     if response.status_code == 200:
                         mark_item_as_notified(item_type, item_name, release_year)
-                        logging.info(f"(Episode) {series_name} S{season_num}E{season_epi} notification sent to Telegram!")
+                        logging.info(
+                            f"(Episode) {series_name} S{season_num}E{season_epi} "
+                            f"notification sent to Telegram!"
+                        )
                         return "Notification sent to Telegram!"
                     else:
                         send_telegram_photo(series_id, notification_message)
-                        logging.warning(f"(Episode) {series_name} season image does not exists, "
-                                        f"falling back to series image")
+                        logging.warning(
+                            f"(Episode) {series_name} season image does not exists, "
+                            f"falling back to series image"
+                        )
                         mark_item_as_notified(item_type, item_name, release_year)
-                        logging.info(f"(Episode) {series_name} S{season_num}E{season_epi} notification sent to Telegram!")
+                        logging.info(
+                            f"(Episode) {series_name} S{season_num}E{season_epi} "
+                            f"notification sent to Telegram!"
+                        )
                         return "Notification sent to Telegram!"
 
                 else:

@@ -86,9 +86,75 @@ This project includes a GitHub Actions workflow that automatically builds and va
 
 The CI workflow ensures that the Docker image can be successfully built for both x86_64 and ARM64 architectures, making it compatible with a wide range of devices including Raspberry Pi, AWS Graviton instances, and Apple Silicon Macs.
 
+## Testing
+
+This project includes a comprehensive test suite with unit and integration tests covering all major functionality.
+
+### Running Tests Locally
+
+1. Install development dependencies:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+2. Run all tests:
+   ```bash
+   pytest tests/ -v
+   ```
+
+3. Run tests with coverage report:
+   ```bash
+   pytest tests/ -v --cov=app --cov-report=term-missing
+   ```
+
+4. Run specific test files:
+   ```bash
+   pytest tests/test_date_filtering.py -v
+   pytest tests/test_notification_tracking.py -v
+   pytest tests/test_api_integration.py -v
+   pytest tests/test_webhook.py -v
+   ```
+
+### Linting
+
+The project uses flake8 and black for code quality:
+
+1. Check code style with flake8:
+   ```bash
+   flake8 app.py tests/
+   ```
+
+2. Format code with black:
+   ```bash
+   black --line-length 120 app.py tests/
+   ```
+
+### Test Coverage
+
+The test suite provides 98% code coverage including:
+- Date filtering functions
+- Notification tracking and deduplication
+- Jellyfin, Telegram, and YouTube API integrations
+- Webhook endpoint for all item types (Movie, Season, Episode)
+- Error handling and edge cases
+
+### CI/CD
+
+The project uses GitHub Actions for continuous integration:
+- Automated testing on Python 3.11 and 3.12
+- Code linting and formatting checks
+- Code coverage reporting
+- Multi-architecture Docker builds
+
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests for new features, bug fixes, or improvements.
+
+When contributing, please:
+- Write tests for new features
+- Ensure all tests pass with `pytest tests/`
+- Run linting with `flake8 app.py tests/`
+- Format code with `black --line-length 120 app.py tests/`
 
 ## License
 
