@@ -9,6 +9,10 @@ services:
       - ./log:/app/log  # Map the host directory to the container directory for logs
       - ./data:/app/data  # Map the host directory to the container directory for json data
     environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
+      - TZ=Etc/UTC
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - JELLYFIN_BASE_URL=${JELLYFIN_BASE_URL}
