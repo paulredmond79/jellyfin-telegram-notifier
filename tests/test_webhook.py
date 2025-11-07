@@ -235,7 +235,8 @@ class TestWebhookEpisode:
         response = client.post("/webhook", data=json.dumps(sample_episode_payload), content_type="application/json")
 
         assert response.status_code == 200
-        assert b"was added more than" in response.data  # Updated to match actual message
+        # The response message says "was added more than" instead of "was premiered more than"
+        assert b"was added more than" in response.data
         mock_telegram.assert_not_called()
 
     @patch("app.send_telegram_photo")

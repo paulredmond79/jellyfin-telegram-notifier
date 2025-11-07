@@ -7,6 +7,7 @@ import requests
 from requests.exceptions import HTTPError
 from flask import Flask, request
 from dotenv import load_dotenv
+import tempfile
 
 load_dotenv()
 
@@ -23,8 +24,6 @@ try:
 except (PermissionError, OSError):
     # In test environment, we may not have permission to create /app/log
     # Use a temporary directory instead
-    import tempfile
-
     log_directory = tempfile.mkdtemp()
     log_filename = os.path.join(log_directory, "jellyfin_telegram-notifier.log")
 
@@ -55,9 +54,10 @@ try:
     os.makedirs(data_directory, exist_ok=True)
 except (PermissionError, OSError):
     # In test environment, use a temporary file
-    import tempfile
-
-    notified_items_file = tempfile.mktemp(suffix=".json")
+    fd, notified_items_file = tempfile.mkstemp(suffix=".json")
+    # Initialize with empty JSON object
+    os.write(fd, b"{}")
+    os.close(fd)  # Close the file descriptor, we'll use the path
 
 
 # Function to load notified items from the JSON file
