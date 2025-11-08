@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 import os
 import json
 import requests
-from requests.exceptions import HTTPError
+from requests.exceptions import HTTPError, RequestException
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from flask import Flask, request
 from dotenv import load_dotenv
 import tempfile
@@ -77,6 +79,32 @@ YOUTUBE_API_KEY = os.environ["YOUTUBE_API_KEY"]
 EPISODE_PREMIERED_WITHIN_X_DAYS = int(os.environ["EPISODE_PREMIERED_WITHIN_X_DAYS"])
 SEASON_ADDED_WITHIN_X_DAYS = int(os.environ["SEASON_ADDED_WITHIN_X_DAYS"])
 
+# HTTP Request Configuration
+REQUEST_TIMEOUT = 30  # seconds for regular API requests
+IMAGE_DOWNLOAD_TIMEOUT = 60  # seconds for image downloads
+MAX_RETRIES = 3  # number of retry attempts for failed requests
+RETRY_BACKOFF_FACTOR = 1  # backoff factor for retries (1, 2, 4 seconds)
+
+
+# Configure requests session with retry logic
+def create_session_with_retries():
+    """Create a requests session with automatic retry logic for transient failures."""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=MAX_RETRIES,
+        backoff_factor=RETRY_BACKOFF_FACTOR,
+        status_forcelist=[429, 500, 502, 503, 504],  # Retry on these HTTP status codes
+        allowed_methods=["HEAD", "GET", "POST"],  # Methods to retry
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+# Create session with retry logic
+http_session = create_session_with_retries()
+
 # Path for the JSON file to store notified items
 notified_items_file = os.environ.get("NOTIFIED_ITEMS_FILE", "/app/data/notified_items.json")
 
@@ -115,11 +143,16 @@ def send_telegram_photo(photo_id, caption):
 
     # Download the image from the jellyfin
     logging.info(f"Downloading image from Jellyfin: {primary_photo_url}")
-    image_response = requests.get(primary_photo_url)
-    logging.info(
-        f"Image download response: status_code={image_response.status_code}, "
-        f"size={len(image_response.content)} bytes"
-    )
+    try:
+        image_response = http_session.get(primary_photo_url, timeout=IMAGE_DOWNLOAD_TIMEOUT)
+        image_response.raise_for_status()  # Raise an exception for bad status codes
+        logging.info(
+            f"Image download response: status_code={image_response.status_code}, "
+            f"size={len(image_response.content)} bytes"
+        )
+    except RequestException as e:
+        logging.error(f"Failed to download image from Jellyfin: {e}")
+        raise  # Re-raise to let caller handle the failure
 
     # Upload the image to the Telegram bot
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -127,7 +160,7 @@ def send_telegram_photo(photo_id, caption):
 
     logging.info(f"Sending photo to Telegram: chat_id={TELEGRAM_CHAT_ID}, caption_length={len(caption)}")
     files = {"photo": ("photo.jpg", image_response.content, "image/jpeg")}
-    response = requests.post(url, data=data, files=files)
+    response = http_session.post(url, data=data, files=files, timeout=REQUEST_TIMEOUT)
     logging.info(f"Telegram API response: status_code={response.status_code}")
 
     if response.status_code != 200:
@@ -146,7 +179,7 @@ def get_item_details(item_id):
         "api_key": JELLYFIN_API_KEY,
     }
     url = f"{JELLYFIN_BASE_URL}/emby/Items?Recursive=true&Fields=DateCreated, Overview&Ids={item_id}"
-    response = requests.get(url, headers=headers, params=params)
+    response = http_session.get(url, headers=headers, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()  # Check if request was successful
     return response.json()
 
@@ -169,7 +202,7 @@ def get_youtube_trailer_url(query):
 
     params = {"part": "snippet", "q": query, "type": "video", "key": api_key}
 
-    response = requests.get(base_search_url, params=params)
+    response = http_session.get(base_search_url, params=params, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()  # Check for HTTP errors before processing the data
     response_data = response.json()
     items = response_data.get("items", [])
@@ -320,17 +353,21 @@ def announce_new_releases_from_jellyfin():
 
                 notification_message += f"\n\n[▶️ Watch Now]({watch_now_url})"
 
-                response = send_telegram_photo(movie_id, notification_message)
-                if response.status_code == 200:
-                    mark_item_as_notified(item_type, item_name, release_year)
-                    logging.info(f"(Movie) {movie_name} {release_year} " f"notification was sent to telegram.")
-                    return "Movie notification was sent to telegram"
-                else:
-                    logging.error(
-                        f"(Movie) Failed to send {movie_name} {release_year} notification. "
-                        f"Status: {response.status_code}, Response: {response.text}"
-                    )
-                    return f"Failed to send movie notification: {response.status_code}"
+                try:
+                    response = send_telegram_photo(movie_id, notification_message)
+                    if response.status_code == 200:
+                        mark_item_as_notified(item_type, item_name, release_year)
+                        logging.info(f"(Movie) {movie_name} {release_year} " f"notification was sent to telegram.")
+                        return "Movie notification was sent to telegram"
+                    else:
+                        logging.error(
+                            f"(Movie) Failed to send {movie_name} {release_year} notification. "
+                            f"Status: {response.status_code}, Response: {response.text}"
+                        )
+                        return f"Failed to send movie notification: {response.status_code}"
+                except RequestException as e:
+                    logging.error(f"(Movie) Failed to send {movie_name} {release_year} notification. Error: {e}")
+                    return f"Failed to send movie notification: {str(e)}"
 
         if item_type == "Season":
             if not item_already_notified(item_type, item_name, release_year):
@@ -355,28 +392,53 @@ def announce_new_releases_from_jellyfin():
                     f"[▶️ Watch Now]({watch_now_url})"
                 )
 
-                response = send_telegram_photo(season_id, notification_message)
+                try:
+                    response = send_telegram_photo(season_id, notification_message)
 
-                if response.status_code == 200:
-                    mark_item_as_notified(item_type, item_name, release_year)
-                    logging.info(f"(Season) {series_name_cleaned} {season} " f"notification was sent to telegram.")
-                    return "Season notification was sent to telegram"
-                else:
-                    logging.warning(
-                        f"(Season) {series_name_cleaned} {season} image does not exist "
-                        f"(status: {response.status_code}), falling back to series image"
-                    )
-                    fallback_response = send_telegram_photo(series_id, notification_message)
-                    if fallback_response.status_code == 200:
+                    if response.status_code == 200:
                         mark_item_as_notified(item_type, item_name, release_year)
-                        logging.info(f"(Season) {series_name_cleaned} {season} notification was sent to telegram")
+                        logging.info(f"(Season) {series_name_cleaned} {season} " f"notification was sent to telegram.")
                         return "Season notification was sent to telegram"
                     else:
-                        logging.error(
-                            f"(Season) Failed to send {series_name_cleaned} {season} notification even with fallback. "
-                            f"Status: {fallback_response.status_code}, Response: {fallback_response.text}"
+                        logging.warning(
+                            f"(Season) {series_name_cleaned} {season} image does not exist "
+                            f"(status: {response.status_code}), falling back to series image"
                         )
-                        return f"Failed to send season notification: {fallback_response.status_code}"
+                        fallback_response = send_telegram_photo(series_id, notification_message)
+                        if fallback_response.status_code == 200:
+                            mark_item_as_notified(item_type, item_name, release_year)
+                            logging.info(f"(Season) {series_name_cleaned} {season} notification was sent to telegram")
+                            return "Season notification was sent to telegram"
+                        else:
+                            logging.error(
+                                f"(Season) Failed to send {series_name_cleaned} {season} notification "
+                                f"even with fallback. "
+                                f"Status: {fallback_response.status_code}, Response: {fallback_response.text}"
+                            )
+                            return f"Failed to send season notification: {fallback_response.status_code}"
+                except RequestException as e:
+                    logging.error(
+                        f"(Season) Failed to download image for {series_name_cleaned} {season}. "
+                        f"Error: {e}. Attempting fallback to series image."
+                    )
+                    try:
+                        fallback_response = send_telegram_photo(series_id, notification_message)
+                        if fallback_response.status_code == 200:
+                            mark_item_as_notified(item_type, item_name, release_year)
+                            logging.info(f"(Season) {series_name_cleaned} {season} notification was sent to telegram")
+                            return "Season notification was sent to telegram"
+                        else:
+                            logging.error(
+                                f"(Season) Failed to send {series_name_cleaned} {season} notification with fallback. "
+                                f"Status: {fallback_response.status_code}"
+                            )
+                            return f"Failed to send season notification: {fallback_response.status_code}"
+                    except RequestException as fallback_error:
+                        logging.error(
+                            f"(Season) Failed to send {series_name_cleaned} {season} notification. "
+                            f"Fallback also failed. Error: {fallback_error}"
+                        )
+                        return f"Failed to send season notification: {str(fallback_error)}"
 
         if item_type == "Episode":
             if not item_already_notified(item_type, item_name, release_year):
@@ -411,33 +473,62 @@ def announce_new_releases_from_jellyfin():
                         f"{season_num}*E*{season_epi}\n*Episode Title*: {epi_name}\n\n{overview}\n\n"
                         f"[▶️ Watch Now]({watch_now_url})"
                     )
-                    response = send_telegram_photo(season_id, notification_message)
+                    try:
+                        response = send_telegram_photo(season_id, notification_message)
 
-                    if response.status_code == 200:
-                        mark_item_as_notified(item_type, item_name, release_year)
-                        logging.info(
-                            f"(Episode) {series_name} S{season_num}E{season_epi} " f"notification sent to Telegram!"
-                        )
-                        return "Notification sent to Telegram!"
-                    else:
-                        logging.warning(
-                            f"(Episode) {series_name} season image does not exist (status: {response.status_code}), "
-                            f"falling back to series image"
-                        )
-                        fallback_response = send_telegram_photo(series_id, notification_message)
-                        if fallback_response.status_code == 200:
+                        if response.status_code == 200:
                             mark_item_as_notified(item_type, item_name, release_year)
                             logging.info(
                                 f"(Episode) {series_name} S{season_num}E{season_epi} " f"notification sent to Telegram!"
                             )
                             return "Notification sent to Telegram!"
                         else:
-                            logging.error(
-                                f"(Episode) Failed to send {series_name} S{season_num}E{season_epi} notification "
-                                f"even with fallback. Status: {fallback_response.status_code}, "
-                                f"Response: {fallback_response.text}"
+                            logging.warning(
+                                f"(Episode) {series_name} season image does not exist "
+                                f"(status: {response.status_code}), "
+                                f"falling back to series image"
                             )
-                            return f"Failed to send episode notification: {fallback_response.status_code}"
+                            fallback_response = send_telegram_photo(series_id, notification_message)
+                            if fallback_response.status_code == 200:
+                                mark_item_as_notified(item_type, item_name, release_year)
+                                logging.info(
+                                    f"(Episode) {series_name} S{season_num}E{season_epi} "
+                                    f"notification sent to Telegram!"
+                                )
+                                return "Notification sent to Telegram!"
+                            else:
+                                logging.error(
+                                    f"(Episode) Failed to send {series_name} S{season_num}E{season_epi} notification "
+                                    f"even with fallback. Status: {fallback_response.status_code}, "
+                                    f"Response: {fallback_response.text}"
+                                )
+                                return f"Failed to send episode notification: {fallback_response.status_code}"
+                    except RequestException as e:
+                        logging.error(
+                            f"(Episode) Failed to download image for {series_name} S{season_num}E{season_epi}. "
+                            f"Error: {e}. Attempting fallback to series image."
+                        )
+                        try:
+                            fallback_response = send_telegram_photo(series_id, notification_message)
+                            if fallback_response.status_code == 200:
+                                mark_item_as_notified(item_type, item_name, release_year)
+                                logging.info(
+                                    f"(Episode) {series_name} S{season_num}E{season_epi} "
+                                    f"notification sent to Telegram!"
+                                )
+                                return "Notification sent to Telegram!"
+                            else:
+                                logging.error(
+                                    f"(Episode) Failed to send {series_name} S{season_num}E{season_epi} notification "
+                                    f"with fallback. Status: {fallback_response.status_code}"
+                                )
+                                return f"Failed to send episode notification: {fallback_response.status_code}"
+                        except RequestException as fallback_error:
+                            logging.error(
+                                f"(Episode) Failed to send {series_name} S{season_num}E{season_epi} notification. "
+                                f"Fallback also failed. Error: {fallback_error}"
+                            )
+                            return f"Failed to send episode notification: {str(fallback_error)}"
 
                 else:
                     logging.info(
