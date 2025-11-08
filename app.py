@@ -367,7 +367,7 @@ def announce_new_releases_from_jellyfin():
                         return f"Failed to send movie notification: {response.status_code}"
                 except RequestException as e:
                     logging.error(f"(Movie) Failed to send {movie_name} {release_year} notification. Error: {e}")
-                    return f"Failed to send movie notification: {str(e)}"
+                    return "Failed to send movie notification due to network error"
 
         if item_type == "Season":
             if not item_already_notified(item_type, item_name, release_year):
@@ -438,7 +438,7 @@ def announce_new_releases_from_jellyfin():
                             f"(Season) Failed to send {series_name_cleaned} {season} notification. "
                             f"Fallback also failed. Error: {fallback_error}"
                         )
-                        return f"Failed to send season notification: {str(fallback_error)}"
+                        return "Failed to send season notification due to network error"
 
         if item_type == "Episode":
             if not item_already_notified(item_type, item_name, release_year):
@@ -528,7 +528,7 @@ def announce_new_releases_from_jellyfin():
                                 f"(Episode) Failed to send {series_name} S{season_num}E{season_epi} notification. "
                                 f"Fallback also failed. Error: {fallback_error}"
                             )
-                            return f"Failed to send episode notification: {str(fallback_error)}"
+                            return "Failed to send episode notification due to network error"
 
                 else:
                     logging.info(
