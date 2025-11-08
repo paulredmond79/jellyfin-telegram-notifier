@@ -8,10 +8,42 @@ from requests.exceptions import HTTPError
 from flask import Flask, request
 from dotenv import load_dotenv
 import tempfile
+from flasgger import Swagger
 
 load_dotenv()
 
 app = Flask(__name__)
+
+# Configure Swagger UI
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": "apispec",
+            "route": "/apispec.json",
+            "rule_filter": lambda rule: True,
+            "model_filter": lambda tag: True,
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/docs",
+}
+
+swagger_template = {
+    "swagger": "2.0",
+    "info": {
+        "title": "Jellyfin Telegram Notifier API",
+        "description": "Webhook API for sending Telegram notifications when new media content is added to Jellyfin",
+        "version": "1.0.0",
+    },
+    "schemes": ["http", "https"],
+    "tags": [
+        {"name": "webhook", "description": "Webhook endpoints for Jellyfin notifications"},
+    ],
+}
+
+swagger = Swagger(app, config=swagger_config, template=swagger_template)
 
 # Set up logging
 log_directory = os.environ.get("LOG_DIRECTORY", "/app/log")
@@ -157,6 +189,92 @@ def mark_item_as_notified(item_type, item_name, release_year, max_entries=100):
 
 @app.route("/webhook", methods=["POST"])
 def announce_new_releases_from_jellyfin():
+    """
+    Jellyfin Webhook Endpoint
+    ---
+    tags:
+      - webhook
+    summary: Receive Jellyfin webhook notifications
+    description: |
+      This endpoint receives webhook notifications from Jellyfin when new media content
+      (movies, seasons, or episodes) is added to the library. It processes the webhook
+      payload and sends formatted notifications to a configured Telegram chat.
+
+      **Supported Item Types:**
+      - Movie: Sends notification with movie details, poster, and trailer link
+      - Season: Sends notification when a new season is added to a series
+      - Episode: Sends notification for new episodes (with date filtering)
+
+      **Filtering Logic:**
+      - Episodes are only notified if premiered within configured days
+      - Episodes are skipped if their season was added recently (to prevent spam)
+      - Duplicate notifications are prevented using a tracking system
+    parameters:
+      - name: body
+        in: body
+        required: true
+        description: Jellyfin webhook payload
+        schema:
+          type: object
+          properties:
+            ItemType:
+              type: string
+              description: Type of media item (Movie, Season, or Episode)
+              example: Movie
+            ItemId:
+              type: string
+              description: Unique identifier for the item in Jellyfin
+              example: abc123def456
+            Name:
+              type: string
+              description: Name of the item
+              example: The Matrix
+            Year:
+              type: integer
+              description: Release year of the item
+              example: 1999
+            Overview:
+              type: string
+              description: Description/overview of the item
+              example: A computer hacker learns about the true nature of reality...
+            RunTime:
+              type: string
+              description: Runtime of the movie (for Movie type)
+              example: 2h 16m
+            SeriesName:
+              type: string
+              description: Name of the series (for Episode and Season types)
+              example: Breaking Bad
+            SeasonNumber00:
+              type: string
+              description: Zero-padded season number (for Episode type)
+              example: "01"
+            EpisodeNumber00:
+              type: string
+              description: Zero-padded episode number (for Episode type)
+              example: "05"
+    responses:
+      200:
+        description: Notification processed successfully
+        schema:
+          type: string
+          examples:
+            movie: Movie notification was sent to telegram
+            season: Season notification was sent to telegram
+            episode: Notification sent to Telegram!
+            duplicate: Item type not supported.
+            filtered: Episode was added more than X days ago. Not sending notification.
+      400:
+        description: Invalid request (malformed JSON or unsupported item type)
+        schema:
+          type: string
+          example: Error processing request
+      500:
+        description: Server error (HTTP error or exception)
+        schema:
+          type: string
+          example: HTTP error occurred
+    """
     try:
         payload = json.loads(request.data)
         item_type = payload.get("ItemType")
