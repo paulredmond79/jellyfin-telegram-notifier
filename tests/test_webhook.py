@@ -60,6 +60,8 @@ class TestWebhookMovie:
         assert "A great test movie" in message
         assert "02:00:00" in message
         assert "Trailer" in message
+        assert "Watch Now" in message
+        assert "http://test-jellyfin.com/web/index.html#!/details?id=movie123" in message
 
     @patch("app.send_telegram_photo")
     @patch("app.get_youtube_trailer_url")
@@ -80,6 +82,7 @@ class TestWebhookMovie:
         # Should have cleaned name in the message
         assert "*Test Movie*" in message
         assert "*(2023)*" in message
+        assert "Watch Now" in message
 
 
 @pytest.mark.integration
@@ -137,6 +140,8 @@ class TestWebhookSeason:
         call_args = mock_telegram.call_args
         message = call_args[0][1]
         assert "Test overview" in message
+        assert "Watch Now" in message
+        assert "http://test-jellyfin.com/web/index.html#!/details?id=season123" in message
 
 
 @pytest.mark.integration
@@ -174,6 +179,12 @@ class TestWebhookEpisode:
         assert response.status_code == 200
         assert b"Notification sent to Telegram!" in response.data
         mock_mark.assert_called_once()
+
+        # Verify Watch Now link is in the message
+        call_args = mock_telegram.call_args
+        message = call_args[0][1]
+        assert "Watch Now" in message
+        assert "http://test-jellyfin.com/web/index.html#!/details?id=episode123" in message
 
     @patch("app.send_telegram_photo")
     @patch("app.get_item_details")
