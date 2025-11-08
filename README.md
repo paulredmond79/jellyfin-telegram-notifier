@@ -181,6 +181,39 @@ The test suite provides 98% code coverage including:
 - Webhook endpoint for all item types (Movie, Season, Episode)
 - Error handling and edge cases
 
+### Testing the Webhook Endpoint
+
+The repository includes a bash script (`test-webhook.sh`) that can be used to test the running application by sending sample webhook calls. This is useful for verifying that notifications are properly sent to Telegram.
+
+**Prerequisites:**
+- `curl` installed
+- `jq` installed (optional, for pretty JSON formatting)
+- The application running and accessible
+
+**Usage:**
+```bash
+# Test all item types (movie, season, episode)
+./test-webhook.sh
+
+# Test a specific item type
+./test-webhook.sh --type movie
+./test-webhook.sh --type season
+./test-webhook.sh --type episode
+
+# Test with a custom webhook URL
+./test-webhook.sh --url http://192.168.1.100:5000/webhook
+
+# Show help
+./test-webhook.sh --help
+```
+
+The script includes comprehensive example payloads with all optional attributes for each item type:
+- **Movie**: Includes runtime, overview, genres, ratings, providers (TMDB, IMDB), video/audio codecs, and more
+- **Season**: Includes series information, overview, episode count, premiere date, and metadata
+- **Episode**: Includes series/season details, episode numbers, premiere date, runtime, and full media information
+
+After running the script, check your Telegram chat to verify that notifications were received with the correct formatting and images.
+
 ### CI/CD
 
 The project uses GitHub Actions for continuous integration:
