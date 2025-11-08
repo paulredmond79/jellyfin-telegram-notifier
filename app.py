@@ -177,6 +177,8 @@ def announce_new_releases_from_jellyfin():
 
                 trailer_url = get_youtube_trailer_url(f"{movie_name_cleaned} Trailer {release_year}")
 
+                watch_now_url = f"{JELLYFIN_BASE_URL}/web/index.html#!/details?id={movie_id}"
+
                 notification_message = (
                     f"*🍿New Movie Added🍿*\n\n*{movie_name_cleaned}* *({release_year})*\n\n{overview}\n\n"
                     f"Runtime\n{runtime}"
@@ -184,6 +186,8 @@ def announce_new_releases_from_jellyfin():
 
                 if trailer_url:
                     notification_message += f"\n\n[🎥]({trailer_url})[Trailer]({trailer_url})"
+
+                notification_message += f"\n\n[▶️ Watch Now]({watch_now_url})"
 
                 send_telegram_photo(movie_id, notification_message)
                 mark_item_as_notified(item_type, item_name, release_year)
@@ -205,9 +209,12 @@ def announce_new_releases_from_jellyfin():
                     payload.get("Overview") if payload.get("Overview") else series_details["Items"][0].get("Overview")
                 )
 
+                watch_now_url = f"{JELLYFIN_BASE_URL}/web/index.html#!/details?id={season_id}"
+
                 notification_message = (
                     f"*New Season Added*\n\n*{series_name_cleaned}* *({release_year})*\n\n"
                     f"*{season}*\n\n{overview_to_use}\n\n"
+                    f"[▶️ Watch Now]({watch_now_url})"
                 )
 
                 response = send_telegram_photo(season_id, notification_message)
@@ -251,9 +258,12 @@ def announce_new_releases_from_jellyfin():
                 if episode_premiere_date and is_within_last_x_days(
                     episode_premiere_date, EPISODE_PREMIERED_WITHIN_X_DAYS
                 ):
+                    watch_now_url = f"{JELLYFIN_BASE_URL}/web/index.html#!/details?id={item_id}"
+
                     notification_message = (
                         f"*New Episode Added*\n\n*Release Date*: {episode_premiere_date}\n\n*Series*: {series_name} *S*"
                         f"{season_num}*E*{season_epi}\n*Episode Title*: {epi_name}\n\n{overview}\n\n"
+                        f"[▶️ Watch Now]({watch_now_url})"
                     )
                     response = send_telegram_photo(season_id, notification_message)
 
