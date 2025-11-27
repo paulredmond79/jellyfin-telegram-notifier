@@ -106,6 +106,116 @@ The script will create tags for:
 - **`SEASON_ADDED_WITHIN_X_DAYS`**:
   Dictates the threshold for sending notifications based on when a season was added to Jellyfin. If set to `3`, then if a season was added within the last 3 days, episode notifications will not be sent to avoid potential spam from adding an entire season at once.
 
+## Notification Logic
+
+This section provides a detailed explanation of when notifications are and are not sent for each item type.
+
+### Movie Notifications
+
+**When a notification IS sent:**
+- The item type is "Movie"
+- The movie has NOT been previously notified (deduplication check)
+
+**When a notification is NOT sent:**
+- The movie was already notified previously
+
+### Season Notifications
+
+**When a notification IS sent:**
+- The item type is "Season"
+- The season has NOT been previously notified (deduplication check)
+
+**When a notification is NOT sent:**
+- The season was already notified previously
+
+**Note:** Season notifications are sent immediately without any date-based filtering. There is no check on when the season was created or any premiere date filtering for seasons.
+
+### Episode Notifications
+
+Episode notifications have the most complex filtering logic, designed to prevent notification spam when bulk-adding content.
+
+**When a notification IS sent:**
+All of the following conditions must be true:
+1. The item type is "Episode"
+2. The episode has NOT been previously notified (deduplication check)
+3. The season was added **more than** `SEASON_ADDED_WITHIN_X_DAYS` days ago (the season was NOT recently added to Jellyfin)
+4. The episode's `PremiereDate` exists AND is **within the last** `EPISODE_PREMIERED_WITHIN_X_DAYS` days
+
+**When a notification is NOT sent:**
+- The episode was already notified previously, OR
+- The season was added within the last `SEASON_ADDED_WITHIN_X_DAYS` days (prevents spam when adding an entire season at once), OR
+- The episode's premiere date is older than `EPISODE_PREMIERED_WITHIN_X_DAYS` days, OR
+- The episode has no premiere date set
+
+### Episode Filtering Explained
+
+The episode filtering uses two environment variables that work together:
+
+1. **`SEASON_ADDED_WITHIN_X_DAYS`** (default: 3)
+   - If a season was added to Jellyfin within this many days, ALL episode notifications for that season are suppressed
+   - This prevents receiving dozens of notifications when you add an entire season at once
+   - Example: If set to `3`, and you add Season 1 today, episode notifications for that season will be suppressed because the season's `DateCreated` is less than 3 days ago
+
+2. **`EPISODE_PREMIERED_WITHIN_X_DAYS`** (default: 7)
+   - Only episodes that premiered within this many days will trigger notifications
+   - This ensures you only get notified about recent/new episodes, not old ones
+   - Example: If set to `7`, an episode that premiered 10 days ago will NOT trigger a notification
+
+### Decision Flow for Episodes
+
+```
+Episode Webhook Received
+        │
+        ▼
+┌───────────────────────────┐
+│ Was this episode already  │
+│ notified?                 │
+└───────────────────────────┘
+        │
+    Yes │           No
+        ▼           │
+   [No Action]      ▼
+              ┌───────────────────────────┐
+              │ Was the season added      │
+              │ within SEASON_ADDED_      │
+              │ WITHIN_X_DAYS?            │
+              └───────────────────────────┘
+                      │
+                  Yes │           No
+                      ▼           │
+                 [No Action -     ▼
+                  Spam           ┌───────────────────────────┐
+                  Prevention]    │ Did the episode premiere  │
+                                 │ within EPISODE_PREMIERED_ │
+                                 │ WITHIN_X_DAYS?            │
+                                 └───────────────────────────┘
+                                         │
+                                     Yes │           No
+                                         ▼           │
+                                    [Send           ▼
+                                     Notification] [No Action - Old Episode]
+```
+
+### Common Scenarios
+
+| Scenario | Notification Sent? | Reason |
+|----------|-------------------|--------|
+| New movie added | ✅ Yes | Movies are always notified (unless duplicate) |
+| New season added | ✅ Yes | Seasons are always notified (unless duplicate) |
+| New episode added, season is new, episode premiered today | ❌ No | Season was added within `SEASON_ADDED_WITHIN_X_DAYS` |
+| New episode added, season is old, episode premiered today | ✅ Yes | All conditions met |
+| New episode added, season is old, episode premiered 30 days ago | ❌ No | Episode premiere date is too old |
+| Same movie/season/episode added again | ❌ No | Already notified (deduplication) |
+
+### Deduplication
+
+The application tracks all sent notifications using a composite key format: `{ItemType}:{ItemName}:{Year}`. For example:
+- Movie: `Movie:The Matrix:1999`
+- Season: `Season:Season 1:2023`
+- Episode: `Episode:Pilot:2023` (Note: Episode name is typically unique within a series)
+
+This prevents duplicate notifications for the same item. The tracking file is stored at `/app/data/notified_items.json` and maintains a maximum of 100 entries (oldest entries are automatically removed when the limit is exceeded).
+
 ### Setting Up YouTube API Key (Optional)
 
 If you want to fetch YouTube trailer URLs for movies, you can set up a YouTube API key:
