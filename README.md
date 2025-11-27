@@ -138,7 +138,7 @@ Episode notifications have the most complex filtering logic, designed to prevent
 All of the following conditions must be true:
 1. The item type is "Episode"
 2. The episode has NOT been previously notified (deduplication check)
-3. The season's `DateCreated` is **older than** `SEASON_ADDED_WITHIN_X_DAYS` days ago (the season was NOT recently added to Jellyfin)
+3. The season was added **more than** `SEASON_ADDED_WITHIN_X_DAYS` days ago (the season was NOT recently added to Jellyfin)
 4. The episode's `PremiereDate` exists AND is **within the last** `EPISODE_PREMIERED_WITHIN_X_DAYS` days
 
 **When a notification is NOT sent:**
@@ -154,7 +154,7 @@ The episode filtering uses two environment variables that work together:
 1. **`SEASON_ADDED_WITHIN_X_DAYS`** (default: 3)
    - If a season was added to Jellyfin within this many days, ALL episode notifications for that season are suppressed
    - This prevents receiving dozens of notifications when you add an entire season at once
-   - Example: If set to `3`, and you add Season 1 today, no episode notifications will be sent for any Season 1 episodes for the next 3 days
+   - Example: If set to `3`, and you add Season 1 today, episode notifications for that season will be suppressed because the season's `DateCreated` is less than 3 days ago
 
 2. **`EPISODE_PREMIERED_WITHIN_X_DAYS`** (default: 7)
    - Only episodes that premiered within this many days will trigger notifications
@@ -193,8 +193,7 @@ Episode Webhook Received
                                      Yes │           No
                                          ▼           │
                                     [Send           ▼
-                                     Notification] [No Action -
-                                                    Old Episode]
+                                     Notification] [No Action - Old Episode]
 ```
 
 ### Common Scenarios
@@ -210,7 +209,12 @@ Episode Webhook Received
 
 ### Deduplication
 
-The application tracks all sent notifications using a composite key format: `{ItemType}:{ItemName}:{Year}`. This prevents duplicate notifications for the same item. The tracking file is stored at `/app/data/notified_items.json` and maintains a maximum of 100 entries (oldest entries are automatically removed when the limit is exceeded).
+The application tracks all sent notifications using a composite key format: `{ItemType}:{ItemName}:{Year}`. For example:
+- Movie: `Movie:The Matrix:1999`
+- Season: `Season:Season 1:2023`
+- Episode: `Episode:Pilot:2023` (Note: Episode name is typically unique within a series)
+
+This prevents duplicate notifications for the same item. The tracking file is stored at `/app/data/notified_items.json` and maintains a maximum of 100 entries (oldest entries are automatically removed when the limit is exceeded).
 
 ### Setting Up YouTube API Key (Optional)
 
