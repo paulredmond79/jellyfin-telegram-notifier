@@ -74,6 +74,8 @@ logging.getLogger().addHandler(rotating_handler)
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 JELLYFIN_BASE_URL = os.environ["JELLYFIN_BASE_URL"]
+# JELLYFIN_EXTERNAL_URL is used in notifications/links, defaults to JELLYFIN_BASE_URL if not set
+JELLYFIN_EXTERNAL_URL = os.environ.get("JELLYFIN_EXTERNAL_URL", os.environ["JELLYFIN_BASE_URL"])
 JELLYFIN_API_KEY = os.environ["JELLYFIN_API_KEY"]
 YOUTUBE_API_KEY = os.environ["YOUTUBE_API_KEY"]
 EPISODE_PREMIERED_WITHIN_X_DAYS = int(os.environ["EPISODE_PREMIERED_WITHIN_X_DAYS"])
@@ -211,6 +213,60 @@ def get_youtube_trailer_url(query):
     return f"https://www.youtube.com/watch?v={video_id}" if video_id else "Video not found!"
 
 
+def extract_library_name(item_details):
+    """
+    Extract the library/collection name from item details.
+    
+    Attempts to find the parent collection name from the item's parent ID.
+    Returns the parent name if found, otherwise returns None.
+    
+    Args:
+        item_details: The item details dict from get_item_details()
+    
+    Returns:
+        str: The library/collection name or None if not found
+    """
+    try:
+        if not item_details or "Items" not in item_details or not item_details["Items"]:
+            return None
+        
+        item = item_details["Items"][0]
+        parent_id = item.get("ParentId")
+        
+        if not parent_id:
+            return None
+        
+        # Fetch parent (collection/library) details
+        parent_details = get_item_details(parent_id)
+        if parent_details and "Items" in parent_details and parent_details["Items"]:
+            parent_item = parent_details["Items"][0]
+            return parent_item.get("Name")
+    
+    except Exception as e:
+        logging.warning(f"Failed to extract library name from item details: {e}")
+        return None
+    
+    return None
+
+
+def is_leaving_soon_library(library_name):
+    """
+    Detect if a library name indicates "leaving soon" status.
+    
+    Performs case-insensitive search for "leaving soon" in the library name.
+    
+    Args:
+        library_name: The library/collection name to check
+    
+    Returns:
+        bool: True if library name contains "leaving soon", False otherwise
+    """
+    if not library_name:
+        return False
+    
+    return "leaving soon" in library_name.lower()
+
+
 def item_already_notified(item_type, item_name, release_year):
     key = f"{item_type}:{item_name}:{release_year}"
     return key in notified_items
@@ -339,14 +395,38 @@ def announce_new_releases_from_jellyfin():
                 movie_name = item_name
                 movie_name_cleaned = movie_name.replace(f" ({release_year})", "").strip()
 
+                # Fetch full item details to get library information
+                library_name = None
+                try:
+                    item_details = get_item_details(movie_id)
+                    library_name = extract_library_name(item_details)
+                except Exception as e:
+                    logging.warning(f"Failed to fetch library information for movie {movie_name_cleaned}: {e}")
+
+                is_leaving_soon = is_leaving_soon_library(library_name)
+
                 trailer_url = get_youtube_trailer_url(f"{movie_name_cleaned} Trailer {release_year}")
 
-                watch_now_url = f"{JELLYFIN_BASE_URL}/web/index.html#!/details?id={movie_id}"
+                watch_now_url = f"{JELLYFIN_EXTERNAL_URL}/web/index.html#!/details?id={movie_id}"
 
-                notification_message = (
+                notification_message = ""
+
+                # Add leaving soon header if applicable
+                if is_leaving_soon:
+                    notification_message += "⚠️ *LEAVING SOON* ⚠️\n\n"
+
+                notification_message += (
                     f"*🍿New Movie Added🍿*\n\n*{movie_name_cleaned}* *({release_year})*\n\n{overview}\n\n"
                     f"Runtime\n{runtime}"
                 )
+
+                # Add library name if available
+                if library_name:
+                    notification_message += f"\n\n*Library*: {library_name}"
+
+                # Add removal warning if leaving soon
+                if is_leaving_soon:
+                    notification_message += "\n\n⚠️ This movie will be removed soon!"
 
                 if trailer_url:
                     notification_message += f"\n\n[🎥]({trailer_url})[Trailer]({trailer_url})"
@@ -384,13 +464,37 @@ def announce_new_releases_from_jellyfin():
                     payload.get("Overview") if payload.get("Overview") else series_details["Items"][0].get("Overview")
                 )
 
-                watch_now_url = f"{JELLYFIN_BASE_URL}/web/index.html#!/details?id={season_id}"
+                # Fetch library information from season details
+                library_name = None
+                try:
+                    library_name = extract_library_name(season_details)
+                except Exception as e:
+                    logging.warning(f"Failed to fetch library information for season {series_name_cleaned} {season}: {e}")
 
-                notification_message = (
+                is_leaving_soon = is_leaving_soon_library(library_name)
+
+                watch_now_url = f"{JELLYFIN_EXTERNAL_URL}/web/index.html#!/details?id={season_id}"
+
+                notification_message = ""
+
+                # Add leaving soon header if applicable
+                if is_leaving_soon:
+                    notification_message += "⚠️ *LEAVING SOON* ⚠️\n\n"
+
+                notification_message += (
                     f"*New Season Added*\n\n*{series_name_cleaned}* *({release_year})*\n\n"
-                    f"*{season}*\n\n{overview_to_use}\n\n"
-                    f"[▶️ Watch Now]({watch_now_url})"
+                    f"*{season}*\n\n{overview_to_use}"
                 )
+
+                # Add library name if available
+                if library_name:
+                    notification_message += f"\n\n*Library*: {library_name}"
+
+                # Add removal warning if leaving soon
+                if is_leaving_soon:
+                    notification_message += "\n\n⚠️ This show will be removed soon!"
+
+                notification_message += f"\n\n[▶️ Watch Now]({watch_now_url})"
 
                 try:
                     response = send_telegram_photo(season_id, notification_message)
@@ -466,13 +570,38 @@ def announce_new_releases_from_jellyfin():
                 if episode_premiere_date and is_within_last_x_days(
                     episode_premiere_date, EPISODE_PREMIERED_WITHIN_X_DAYS
                 ):
-                    watch_now_url = f"{JELLYFIN_BASE_URL}/web/index.html#!/details?id={item_id}"
+                    watch_now_url = f"{JELLYFIN_EXTERNAL_URL}/web/index.html#!/details?id={item_id}"
 
-                    notification_message = (
+                    # Fetch library information from episode details
+                    library_name = None
+                    try:
+                        library_name = extract_library_name(file_details)
+                    except Exception as e:
+                        logging.warning(f"Failed to fetch library information for episode {series_name} S{season_num}E{season_epi}: {e}")
+
+                    is_leaving_soon = is_leaving_soon_library(library_name)
+
+                    notification_message = ""
+
+                    # Add leaving soon header if applicable
+                    if is_leaving_soon:
+                        notification_message += "⚠️ *LEAVING SOON* ⚠️\n\n"
+
+                    notification_message += (
                         f"*New Episode Added*\n\n*Release Date*: {episode_premiere_date}\n\n*Series*: {series_name} *S*"
-                        f"{season_num}*E*{season_epi}\n*Episode Title*: {epi_name}\n\n{overview}\n\n"
-                        f"[▶️ Watch Now]({watch_now_url})"
+                        f"{season_num}*E*{season_epi}\n*Episode Title*: {epi_name}\n\n{overview}"
                     )
+
+                    # Add library name if available
+                    if library_name:
+                        notification_message += f"\n\n*Library*: {library_name}"
+
+                    # Add removal warning if leaving soon
+                    if is_leaving_soon:
+                        notification_message += "\n\n⚠️ This show will be removed soon!"
+
+                    notification_message += f"\n\n[▶️ Watch Now]({watch_now_url})"
+
                     try:
                         response = send_telegram_photo(season_id, notification_message)
 

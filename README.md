@@ -9,6 +9,8 @@ A simple Flask application that sends notifications to Telegram whenever new con
 - Sends Telegram notifications with media images whenever a new movie, series, season, or episode is added to Jellyfin.
 - Integrates with the Jellyfin webhook plugin.
 - Provides a filter to notify only for recent episodes or newly added seasons.
+- **Detects library/collection information** and displays the library name in notifications.
+- **Automatic "Leaving Soon" detection** - identifies when content is in a "Leaving Soon" library and displays a warning with special formatting.
 - Supports multiple architectures: amd64 and arm64 (aarch64).
 
 ## Prerequisites
@@ -23,8 +25,8 @@ A simple Flask application that sends notifications to Telegram whenever new con
 
 1. Clone the repository.
 2. Install the requirements using `pip install -r requirements.txt`.
-3. Set up your environment variables. (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, JELLYFIN_BASE_URL, JELLYFIN_API_KEY, YOUTUBE_API_KEY, EPISODE_PREMIERED_WITHIN_X_DAYS, SEASON_ADDED_WITHIN_X_DAYS).
-4. Run the application using `python3 main.py`.
+3. Set up your environment variables in a `.env` file (see [Environment Variables](#environment-variables) section).
+4. Run the application using `python3 app.py`.
 
 ### Docker Installation
 
@@ -86,25 +88,142 @@ The script will create tags for:
 6. For `Item Type`, select `Movie, Episode, Season`.
 7. Make sure to enable the `Send All Properties (ignores template)` option.
 
-#### Environment Variables Explanation:
+## Environment Variables
 
-- **`PUID`** (Docker only, default: 1000):
-  User ID for the application to run as. Set this to match your host user's UID to avoid permission issues with mounted volumes.
+The application requires several environment variables to be configured. Create a `.env` file in the project root with the following variables:
 
-- **`PGID`** (Docker only, default: 1000):
-  Group ID for the application to run as. Set this to match your host user's GID to avoid permission issues with mounted volumes.
+### Required Variables
 
-- **`UMASK`** (Docker only, default: 002):
-  Controls the default file creation permissions. A value of `002` allows group write access, while `022` restricts write access to the owner only.
+- **`TELEGRAM_BOT_TOKEN`**:
+  Your Telegram bot token. Obtained from BotFather on Telegram. Example: `6123456789:ABCDefGhIJKlmnOpQrStUvWxYz1234567890`
 
-- **`TZ`** (Docker only, default: Etc/UTC):
-  Timezone for the container. Examples: `America/New_York`, `Europe/London`, `Asia/Tokyo`.
+- **`TELEGRAM_CHAT_ID`**:
+  The chat ID where notifications will be sent. Can be a user ID or group chat ID. Get this by messaging your bot and visiting `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`. Example: `987654321`
+
+- **`JELLYFIN_BASE_URL`**:
+  The base URL of your Jellyfin server used for internal API calls. This can be an internal IP address or internal DNS name. Example: `http://jellyfin.internal:8096` or `http://192.168.1.100:8096`
+
+- **`JELLYFIN_EXTERNAL_URL`** (Optional, defaults to `JELLYFIN_BASE_URL`):
+  The external URL for Jellyfin displayed in notifications and "Watch Now" links. Use this if the internal URL differs from the external one (e.g., different hostname or port for external access). This is what users will click in their notifications. Example: `https://jellyfin.example.com` or `http://192.168.1.1:8096`
+
+- **`JELLYFIN_API_KEY`**:
+  Your Jellyfin API key for authentication. Get this from Jellyfin Dashboard → Settings → API Keys → Create New API Key. Example: `abcdef1234567890abcdef1234567890`
 
 - **`EPISODE_PREMIERED_WITHIN_X_DAYS`**:
-  Determines how recent an episode's premiere date must be for a notification to be sent. For example, setting it to `7` means only episodes that premiered within the last 7 days will trigger a notification.
+  Determines how recent an episode's premiere date must be for a notification to be sent. For example, setting it to `7` means only episodes that premiered within the last 7 days will trigger a notification. Set to a large number (e.g., `365`) to notify on all episodes. Example: `7`
 
 - **`SEASON_ADDED_WITHIN_X_DAYS`**:
-  Dictates the threshold for sending notifications based on when a season was added to Jellyfin. If set to `3`, then if a season was added within the last 3 days, episode notifications will not be sent to avoid potential spam from adding an entire season at once.
+  Dictates the threshold for sending notifications based on when a season was added to Jellyfin. If set to `3`, then if a season was added within the last 3 days, episode notifications will not be sent to avoid potential spam from adding an entire season at once. Example: `3`
+
+### Optional Variables
+
+- **`YOUTUBE_API_KEY`** (Optional):
+  YouTube Data API key for fetching movie trailer URLs. If not provided, trailers will not be included in notifications. Instructions for obtaining this key are provided in the [Setting Up YouTube API Key](#setting-up-youtube-api-key-optional) section.
+
+- **`LOG_DIRECTORY`** (Default: `/app/log`):
+  Directory where application logs will be stored. Logs are rotated daily with 7-day retention.
+
+- **`NOTIFIED_ITEMS_FILE`** (Default: `/app/data/notified_items.json`):
+  Path to the JSON file storing notification history for deduplication.
+
+### Docker-Specific Variables
+
+- **`PUID`** (Default: 1000):
+  User ID for the application to run as. Set this to match your host user's UID to avoid permission issues with mounted volumes.
+
+- **`PGID`** (Default: 1000):
+  Group ID for the application to run as. Set this to match your host user's GID to avoid permission issues with mounted volumes.
+
+- **`UMASK`** (Default: 002):
+  Controls the default file creation permissions. A value of `002` allows group write access, while `022` restricts write access to the owner only.
+
+- **`TZ`** (Default: Etc/UTC):
+  Timezone for the container. Examples: `America/New_York`, `Europe/London`, `Asia/Tokyo`.
+
+### Example `.env` File
+
+```env
+# Required - Telegram Configuration
+TELEGRAM_BOT_TOKEN=6123456789:ABCDefGhIJKlmnOpQrStUvWxYz1234567890
+TELEGRAM_CHAT_ID=987654321
+
+# Required - Jellyfin Configuration (Internal)
+JELLYFIN_BASE_URL=http://192.168.1.100:8096
+
+# Optional - Jellyfin External URL (shown in notifications)
+# If not set, JELLYFIN_BASE_URL will be used
+JELLYFIN_EXTERNAL_URL=https://jellyfin.example.com
+JELLYFIN_API_KEY=abcdef1234567890abcdef1234567890
+
+# Required - Filtering
+EPISODE_PREMIERED_WITHIN_X_DAYS=7
+SEASON_ADDED_WITHIN_X_DAYS=3
+
+# Optional - YouTube Trailers
+YOUTUBE_API_KEY=AIzaSyD_example1234567890example12345ab
+
+# Optional - Logging
+LOG_DIRECTORY=/app/log
+NOTIFIED_ITEMS_FILE=/app/data/notified_items.json
+
+# Docker Only
+PUID=1000
+PGID=1000
+UMASK=002
+TZ=America/New_York
+```
+
+#### Environment Variables Explanation:
+
+
+To use this in Docker Compose, set these in your `.env` file or pass them in the docker-compose.yml services section.
+
+#### Library Detection (Automatic)
+
+The application automatically detects which library/collection each item belongs to and includes this information in notifications:
+
+- **Library Name**: The name of the Jellyfin library/collection is displayed in all notifications
+- **Leaving Soon Detection**: Libraries with "Leaving Soon" in their name are automatically detected and receive special formatting:
+  - A prominent "⚠️ LEAVING SOON ⚠️" header is added to the notification
+  - A warning message is included: "This movie/show will be removed soon!"
+  - This detection is **case-insensitive**, so "Leaving Soon", "LEAVING SOON", "leaving soon", etc. all trigger the warning
+- **Graceful Degradation**: If library information cannot be fetched, notifications are still sent with all other information intact
+
+**Example Notifications:**
+
+*Normal Library (Movies):*
+```
+🍿New Movie Added🍿
+
+Test Movie (2023)
+
+A great test movie
+
+Runtime
+02:00:00
+
+Library
+Movies
+```
+
+*Leaving Soon Library:*
+```
+⚠️ LEAVING SOON ⚠️
+
+🍿New Movie Added🍿
+
+Test Movie (2023)
+
+A great test movie
+
+Runtime
+02:00:00
+
+Library
+Leaving Soon
+
+⚠️ This movie will be removed soon!
+```
 
 ### Setting Up YouTube API Key (Optional)
 
@@ -174,12 +293,14 @@ The project uses flake8 and black for code quality:
 
 ### Test Coverage
 
-The test suite provides 98% code coverage including:
+The test suite provides comprehensive coverage including:
 - Date filtering functions
 - Notification tracking and deduplication
 - Jellyfin, Telegram, and YouTube API integrations
+- **Library detection and leaving soon identification**
 - Webhook endpoint for all item types (Movie, Season, Episode)
-- Error handling and edge cases
+- Graceful error handling and edge cases
+- Total: 74 tests with 84% code coverage
 
 ### Testing the Webhook Endpoint
 

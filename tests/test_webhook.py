@@ -61,7 +61,9 @@ class TestWebhookMovie:
         assert "02:00:00" in message
         assert "Trailer" in message
         assert "Watch Now" in message
-        assert "http://test-jellyfin.com/web/index.html#!/details?id=movie123" in message
+        # Verify external URL is used in notifications, not internal
+        assert "http://external-jellyfin.com/web/index.html#!/details?id=movie123" in message
+        assert "http://test-jellyfin.com/web/index.html" not in message
 
     @patch("app.send_telegram_photo")
     @patch("app.get_youtube_trailer_url")
@@ -141,7 +143,8 @@ class TestWebhookSeason:
         message = call_args[0][1]
         assert "Test overview" in message
         assert "Watch Now" in message
-        assert "http://test-jellyfin.com/web/index.html#!/details?id=season123" in message
+        # Verify external URL is used
+        assert "http://external-jellyfin.com/web/index.html#!/details?id=season123" in message
 
 
 @pytest.mark.integration
@@ -184,7 +187,8 @@ class TestWebhookEpisode:
         call_args = mock_telegram.call_args
         message = call_args[0][1]
         assert "Watch Now" in message
-        assert "http://test-jellyfin.com/web/index.html#!/details?id=episode123" in message
+        # Verify external URL is used
+        assert "http://external-jellyfin.com/web/index.html#!/details?id=episode123" in message
 
     @patch("app.send_telegram_photo")
     @patch("app.get_item_details")
@@ -281,6 +285,184 @@ class TestWebhookEpisode:
 
         assert response.status_code == 200
         assert mock_telegram.call_count == 2
+
+
+@pytest.mark.integration
+class TestWebhookLeavingSoon:
+    """Test webhook endpoint with leaving soon library detection."""
+
+    @patch("app.send_telegram_photo")
+    @patch("app.get_item_details")
+    @patch("app.get_youtube_trailer_url")
+    @patch("app.mark_item_as_notified")
+    def test_movie_webhook_leaving_soon(
+        self, mock_mark, mock_youtube, mock_get_details, mock_telegram, client,
+        sample_movie_payload, mock_jellyfin_item_details, mock_jellyfin_leaving_soon_library_details
+    ):
+        """Test movie notification includes leaving soon warning."""
+        # First call: get item details with parent, second call: get library details
+        movie_with_parent = {
+            "Items": [
+                {
+                    "Id": "movie123",
+                    "ParentId": "leaving_library123",
+                    "Overview": "A great test movie",
+                }
+            ]
+        }
+        mock_get_details.side_effect = [movie_with_parent, mock_jellyfin_leaving_soon_library_details]
+        mock_youtube.return_value = "https://youtube.com/watch?v=test"
+        mock_telegram.return_value = Mock(status_code=200)
+
+        response = client.post("/webhook", data=json.dumps(sample_movie_payload), content_type="application/json")
+
+        assert response.status_code == 200
+        assert b"Movie notification was sent to telegram" in response.data
+
+        # Verify the message includes leaving soon content
+        call_args = mock_telegram.call_args
+        message = call_args[0][1]
+
+        assert "⚠️ *LEAVING SOON* ⚠️" in message
+        assert "*Library*: Leaving Soon" in message
+        assert "⚠️ This movie will be removed soon!" in message
+
+    @patch("app.send_telegram_photo")
+    @patch("app.get_item_details")
+    @patch("app.mark_item_as_notified")
+    def test_season_webhook_leaving_soon(
+        self, mock_mark, mock_get_details, mock_telegram, client,
+        sample_season_payload, mock_jellyfin_item_details, mock_jellyfin_leaving_soon_library_details
+    ):
+        """Test season notification includes leaving soon warning."""
+        # For season: season details (with parent), series details
+        item_with_parent = {
+            "Items": [
+                {
+                    "Id": "season123",
+                    "SeriesId": "series123",
+                    "ParentId": "leaving_library123",
+                }
+            ]
+        }
+        mock_get_details.side_effect = [item_with_parent, {"Items": [{"Overview": "Series info"}]}, mock_jellyfin_leaving_soon_library_details]
+        mock_telegram.return_value = Mock(status_code=200)
+
+        response = client.post("/webhook", data=json.dumps(sample_season_payload), content_type="application/json")
+
+        assert response.status_code == 200
+        assert b"Season notification was sent to telegram" in response.data
+
+        # Verify the message includes leaving soon content
+        call_args = mock_telegram.call_args
+        message = call_args[0][1]
+
+        assert "⚠️ *LEAVING SOON* ⚠️" in message
+        assert "*Library*: Leaving Soon" in message
+        assert "⚠️ This show will be removed soon!" in message
+
+    @patch("app.send_telegram_photo")
+    @patch("app.get_item_details")
+    @patch("app.mark_item_as_notified")
+    def test_episode_webhook_leaving_soon(
+        self, mock_mark, mock_get_details, mock_telegram, client,
+        sample_episode_payload, mock_jellyfin_leaving_soon_library_details
+    ):
+        """Test episode notification includes leaving soon warning."""
+        # For episode: episode details, season details, library details
+        episode_item = {
+            "Items": [
+                {
+                    "Id": "episode123",
+                    "SeasonId": "season123",
+                    "ParentId": "leaving_library123",
+                    "PremiereDate": datetime.now().isoformat(),
+                }
+            ]
+        }
+        season_item = {
+            "Items": [
+                {
+                    "Id": "season123",
+                    "SeriesId": "series123",
+                    "DateCreated": (datetime.now() - timedelta(days=10)).isoformat(),
+                }
+            ]
+        }
+        mock_get_details.side_effect = [episode_item, season_item, mock_jellyfin_leaving_soon_library_details]
+        mock_telegram.return_value = Mock(status_code=200)
+
+        response = client.post("/webhook", data=json.dumps(sample_episode_payload), content_type="application/json")
+
+        assert response.status_code == 200
+        assert b"Notification sent to Telegram!" in response.data
+
+        # Verify the message includes leaving soon content
+        call_args = mock_telegram.call_args
+        message = call_args[0][1]
+
+        assert "⚠️ *LEAVING SOON* ⚠️" in message
+        assert "*Library*: Leaving Soon" in message
+        assert "⚠️ This show will be removed soon!" in message
+
+    @patch("app.send_telegram_photo")
+    @patch("app.get_item_details")
+    @patch("app.get_youtube_trailer_url")
+    @patch("app.mark_item_as_notified")
+    def test_movie_webhook_library_name_displayed(
+        self, mock_mark, mock_youtube, mock_get_details, mock_telegram, client,
+        sample_movie_payload, mock_jellyfin_library_details
+    ):
+        """Test movie notification displays library name."""
+        # First call: get item details with parent, second call: get library details
+        movie_with_parent = {
+            "Items": [
+                {
+                    "Id": "movie123",
+                    "ParentId": "library123",
+                    "Overview": "A great test movie",
+                }
+            ]
+        }
+        mock_get_details.side_effect = [movie_with_parent, mock_jellyfin_library_details]
+        mock_youtube.return_value = "https://youtube.com/watch?v=test"
+        mock_telegram.return_value = Mock(status_code=200)
+
+        response = client.post("/webhook", data=json.dumps(sample_movie_payload), content_type="application/json")
+
+        assert response.status_code == 200
+
+        # Verify library name is in the message but leaving soon is not
+        call_args = mock_telegram.call_args
+        message = call_args[0][1]
+
+        assert "*Library*: Movies" in message
+        assert "⚠️ *LEAVING SOON* ⚠️" not in message
+        assert "will be removed soon" not in message
+
+    @patch("app.send_telegram_photo")
+    @patch("app.get_item_details")
+    @patch("app.get_youtube_trailer_url")
+    @patch("app.mark_item_as_notified")
+    def test_movie_webhook_graceful_failure_on_library_fetch(
+        self, mock_mark, mock_youtube, mock_get_details, mock_telegram, client, sample_movie_payload
+    ):
+        """Test movie notification works even if library info fetch fails."""
+        mock_get_details.side_effect = Exception("API Error")
+        mock_youtube.return_value = "https://youtube.com/watch?v=test"
+        mock_telegram.return_value = Mock(status_code=200)
+
+        response = client.post("/webhook", data=json.dumps(sample_movie_payload), content_type="application/json")
+
+        assert response.status_code == 200
+        assert b"Movie notification was sent to telegram" in response.data
+
+        # Verify the message doesn't have library info but still sent
+        call_args = mock_telegram.call_args
+        message = call_args[0][1]
+
+        assert "Library" not in message
+        assert "*🍿New Movie Added🍿*" in message
 
 
 @pytest.mark.integration

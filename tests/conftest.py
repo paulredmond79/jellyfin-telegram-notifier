@@ -11,6 +11,7 @@ from datetime import datetime
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test_bot_token")
 os.environ.setdefault("TELEGRAM_CHAT_ID", "test_chat_id")
 os.environ.setdefault("JELLYFIN_BASE_URL", "http://test-jellyfin.com")
+os.environ.setdefault("JELLYFIN_EXTERNAL_URL", "http://external-jellyfin.com")
 os.environ.setdefault("JELLYFIN_API_KEY", "test_api_key")
 os.environ.setdefault("YOUTUBE_API_KEY", "test_youtube_key")
 os.environ.setdefault("EPISODE_PREMIERED_WITHIN_X_DAYS", "7")
@@ -24,6 +25,7 @@ def test_env_vars():
         "TELEGRAM_BOT_TOKEN": "test_bot_token",
         "TELEGRAM_CHAT_ID": "test_chat_id",
         "JELLYFIN_BASE_URL": "http://test-jellyfin.com",
+        "JELLYFIN_EXTERNAL_URL": "http://external-jellyfin.com",
         "JELLYFIN_API_KEY": "test_api_key",
         "YOUTUBE_API_KEY": "test_youtube_key",
         "EPISODE_PREMIERED_WITHIN_X_DAYS": "7",
@@ -166,9 +168,38 @@ def mock_jellyfin_item_details():
                 "Id": "item123",
                 "SeriesId": "series123",
                 "SeasonId": "season123",
+                "ParentId": "library123",
                 "DateCreated": "2023-01-01T00:00:00.0000000Z",
                 "PremiereDate": "2023-01-01T00:00:00.0000000Z",
                 "Overview": "Test overview",
+            }
+        ]
+    }
+
+
+@pytest.fixture
+def mock_jellyfin_library_details():
+    """Mock Jellyfin API parent/library details response."""
+    return {
+        "Items": [
+            {
+                "Id": "library123",
+                "Name": "Movies",
+                "CollectionType": "movies",
+            }
+        ]
+    }
+
+
+@pytest.fixture
+def mock_jellyfin_leaving_soon_library_details():
+    """Mock Jellyfin API parent/library details response for leaving soon library."""
+    return {
+        "Items": [
+            {
+                "Id": "leaving_library123",
+                "Name": "Leaving Soon",
+                "CollectionType": "movies",
             }
         ]
     }

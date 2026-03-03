@@ -274,3 +274,88 @@ class TestHTTPRequestEnhancements:
         assert app.IMAGE_DOWNLOAD_TIMEOUT == 60
         assert app.MAX_RETRIES == 3
         assert app.RETRY_BACKOFF_FACTOR == 1
+
+
+@pytest.mark.unit
+class TestLibraryDetection:
+    """Test library detection functions."""
+
+    @patch("app.get_item_details")
+    def test_extract_library_name_success(self, mock_get_details, mock_jellyfin_item_details, mock_jellyfin_library_details):
+        """Test successful library name extraction."""
+        # When called with the item ID, return item with parent ID
+        # When called with parent ID, return the library
+        mock_get_details.side_effect = [mock_jellyfin_library_details]
+
+        result = app.extract_library_name(mock_jellyfin_item_details)
+
+        assert result == "Movies"
+
+    @patch("app.get_item_details")
+    def test_extract_library_name_with_leaving_soon(self, mock_get_details, mock_jellyfin_item_details, mock_jellyfin_leaving_soon_library_details):
+        """Test library name extraction for leaving soon library."""
+        mock_get_details.side_effect = [mock_jellyfin_leaving_soon_library_details]
+
+        result = app.extract_library_name(mock_jellyfin_item_details)
+
+        assert result == "Leaving Soon"
+
+    def test_extract_library_name_no_parent_id(self):
+        """Test library name extraction when item has no parent ID."""
+        item_details = {
+            "Items": [
+                {
+                    "Id": "item123",
+                    "Name": "Test Item",
+                }
+            ]
+        }
+
+        result = app.extract_library_name(item_details)
+
+        assert result is None
+
+    def test_extract_library_name_empty_response(self):
+        """Test library name extraction with empty response."""
+        item_details = {"Items": []}
+
+        result = app.extract_library_name(item_details)
+
+        assert result is None
+
+    def test_extract_library_name_none_response(self):
+        """Test library name extraction with None response."""
+        result = app.extract_library_name(None)
+
+        assert result is None
+
+    @patch("app.get_item_details")
+    def test_extract_library_name_api_error(self, mock_get_details, mock_jellyfin_item_details):
+        """Test library name extraction handles API errors gracefully."""
+        mock_get_details.side_effect = Exception("API Error")
+
+        result = app.extract_library_name(mock_jellyfin_item_details)
+
+        assert result is None
+
+    def test_is_leaving_soon_library_true(self):
+        """Test detection of leaving soon library."""
+        assert app.is_leaving_soon_library("Leaving Soon") is True
+        assert app.is_leaving_soon_library("LEAVING SOON") is True
+        assert app.is_leaving_soon_library("Movies - Leaving Soon") is True
+        assert app.is_leaving_soon_library("leaving soon (2024)") is True
+
+    def test_is_leaving_soon_library_false(self):
+        """Test that normal libraries are not flagged as leaving soon."""
+        assert app.is_leaving_soon_library("Movies") is False
+        assert app.is_leaving_soon_library("TV Shows") is False
+        assert app.is_leaving_soon_library("Documentaries") is False
+        assert app.is_leaving_soon_library("") is False
+        assert app.is_leaving_soon_library(None) is False
+
+    def test_is_leaving_soon_library_case_insensitive(self):
+        """Test that leaving soon detection is case-insensitive."""
+        assert app.is_leaving_soon_library("Leaving Soon") is True
+        assert app.is_leaving_soon_library("LEAVING SOON") is True
+        assert app.is_leaving_soon_library("LeAvInG sOoN") is True
+        assert app.is_leaving_soon_library("leaving soon") is True
