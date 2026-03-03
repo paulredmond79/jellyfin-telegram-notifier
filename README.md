@@ -66,6 +66,38 @@ The script will create tags for:
 - `localhost:5000/jellyfin-telegram-notifier:<version>`
 - `localhost:5000/jellyfin-telegram-notifier:<commit-hash>`
 
+### Publishing Docker Image to GHCR
+
+The repository includes GitHub Actions workflows that automatically build and publish Docker images to GitHub Container Registry (GHCR). Images are published on:
+- Pushes to the `main` branch → tagged as `latest`
+- Git tags matching `v*` (e.g., `v1.2.3`) → tagged with the version (e.g., `1.2.3`)
+- All pushes → tagged with the commit SHA for traceability
+
+**Image Location:** `ghcr.io/YOUR_GITHUB_ORG/jellyfin-telegram-notifier`
+
+**Privacy:** By default, packages are private. To make the image public or change visibility:
+1. Go to your GitHub repository → **Settings** → **Code and automation** → **Packages and data**
+2. Find the published package and adjust its visibility settings
+
+**Pulling the Image:**
+```bash
+# Log in to GHCR (use your GitHub personal access token with `read:packages` scope)
+docker login ghcr.io -u YOUR_GITHUB_USERNAME
+
+# Pull the image
+docker pull ghcr.io/YOUR_GITHUB_ORG/jellyfin-telegram-notifier:latest
+
+# Run the image
+docker run -d \
+  -e TELEGRAM_BOT_TOKEN=your_token \
+  -e TELEGRAM_CHAT_ID=your_chat_id \
+  -e JELLYFIN_BASE_URL=http://jellyfin:8096 \
+  -e JELLYFIN_API_KEY=your_api_key \
+  -e EPISODE_PREMIERED_WITHIN_X_DAYS=7 \
+  -e SEASON_ADDED_WITHIN_X_DAYS=3 \
+  ghcr.io/YOUR_GITHUB_ORG/jellyfin-telegram-notifier:latest
+```
+
 ## Setting Up a Telegram Bot
 
 1. Start a Chat with BotFather on Telegram.
