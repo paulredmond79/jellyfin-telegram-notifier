@@ -128,6 +128,26 @@ NOTIFIED_ITEMS_FILE=/app/data/notified_items.json
 - Type hints optional but encouraged for complex functions
 - Docstrings for helper functions explaining behavior and error handling
 
+### Code Formatting Requirements
+
+**Black Formatting (REQUIRED for CI/CD)**:
+- All Python code must pass Black formatting checks with **120 character line length**
+- GitHub Actions will fail if code is not properly formatted
+- Must run this before pushing commits:
+  ```bash
+  black --line-length 120 app.py tests/
+  ```
+- To verify formatting without changes:
+  ```bash
+  black --check --line-length 120 app.py tests/
+  ```
+- If you see `reformat` messages, run the formatter and commit the changes
+- Common formatting issues:
+  - Long function signatures that exceed 120 chars (wrap parameters to next lines)
+  - Long strings that exceed 120 chars (move to f-strings with proper breaks)
+  - Method decorators with multiple parameters (wrap to multiple lines)
+  - Long conditional blocks (break into multiple conditions)
+
 ### Error Handling Strategy
 
 - Catch `HTTPError` for API-specific failures
@@ -493,6 +513,27 @@ volumes:
 ```
 
 ## Common Development Tasks
+
+### Pre-Commit Checklist
+
+Before pushing any code, ensure all checks pass locally:
+
+```bash
+# 1. Format code with Black (120 char line length)
+black --line-length 120 app.py tests/
+
+# 2. Run flake8 syntax checks
+flake8 app.py --count --select=E9,F63,F7,F82 --show-source --statistics
+flake8 app.py tests/ --count --exit-zero --max-complexity=10 --statistics
+
+# 3. Run all tests with coverage
+pytest tests/ -v --cov=app --cov-report=term-missing
+
+# If all pass locally, safe to push!
+git push
+```
+
+This mirrors the exact GitHub Actions workflow, preventing surprises.
 
 ### Adding New Features
 
