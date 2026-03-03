@@ -115,6 +115,49 @@ def sample_episode_payload():
 
 
 @pytest.fixture
+def sample_leaving_soon_movie_payload():
+    """Sample movie webhook payload for Leaving Soon library."""
+    return {
+        "ItemType": "Movie",
+        "Name": "Leaving Movie",
+        "Year": 2022,
+        "ItemId": "leaving_movie123",
+        "Overview": "This movie is leaving soon",
+        "RunTime": "01:45:00",
+    }
+
+
+@pytest.fixture
+def sample_leaving_soon_season_payload():
+    """Sample season webhook payload for Leaving Soon library."""
+    return {
+        "ItemType": "Season",
+        "Name": "Season 2",
+        "Year": 2022,
+        "ItemId": "leaving_season123",
+        "SeriesName": "Leaving Series",
+        "Overview": "Second season leaving soon",
+    }
+
+
+@pytest.fixture
+def sample_leaving_soon_episode_payload():
+    """Sample episode webhook payload for Leaving Soon library."""
+    today = datetime.now().isoformat()
+    return {
+        "ItemType": "Episode",
+        "Name": "Final Episode",
+        "Year": 2022,
+        "ItemId": "leaving_episode123",
+        "SeriesName": "Leaving Series",
+        "EpisodeNumber00": "05",
+        "SeasonNumber00": "02",
+        "Overview": "This episode is leaving soon",
+        "PremiereDate": today,
+    }
+
+
+@pytest.fixture
 def mock_jellyfin_item_details():
     """Mock Jellyfin API item details response."""
     return {
@@ -172,10 +215,13 @@ def flask_app(test_env_vars, temp_data_file, temp_log_dir, monkeypatch):
 
     app_module.app.config["TESTING"] = True
 
+    # Reset notified_items before each test
+    app_module.notified_items.clear()
+
     yield app_module.app
 
-    # Reset notified_items
-    app_module.notified_items = {}
+    # Reset notified_items after test
+    app_module.notified_items.clear()
 
 
 @pytest.fixture
