@@ -281,7 +281,9 @@ class TestLibraryDetection:
     """Test library detection functions."""
 
     @patch("app.get_item_details")
-    def test_extract_library_name_success(self, mock_get_details, mock_jellyfin_item_details, mock_jellyfin_library_details):
+    def test_extract_library_name_success(
+        self, mock_get_details, mock_jellyfin_item_details, mock_jellyfin_library_details
+    ):
         """Test successful library name extraction."""
         # When called with the item ID, return item with parent ID
         # When called with parent ID, return the library
@@ -292,7 +294,9 @@ class TestLibraryDetection:
         assert result == "Movies"
 
     @patch("app.get_item_details")
-    def test_extract_library_name_with_leaving_soon(self, mock_get_details, mock_jellyfin_item_details, mock_jellyfin_leaving_soon_library_details):
+    def test_extract_library_name_with_leaving_soon(
+        self, mock_get_details, mock_jellyfin_item_details, mock_jellyfin_leaving_soon_library_details
+    ):
         """Test library name extraction for leaving soon library."""
         mock_get_details.side_effect = [mock_jellyfin_leaving_soon_library_details]
 

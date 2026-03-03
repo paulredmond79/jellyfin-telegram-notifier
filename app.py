@@ -216,54 +216,54 @@ def get_youtube_trailer_url(query):
 def extract_library_name(item_details):
     """
     Extract the library/collection name from item details.
-    
+
     Attempts to find the parent collection name from the item's parent ID.
     Returns the parent name if found, otherwise returns None.
-    
+
     Args:
         item_details: The item details dict from get_item_details()
-    
+
     Returns:
         str: The library/collection name or None if not found
     """
     try:
         if not item_details or "Items" not in item_details or not item_details["Items"]:
             return None
-        
+
         item = item_details["Items"][0]
         parent_id = item.get("ParentId")
-        
+
         if not parent_id:
             return None
-        
+
         # Fetch parent (collection/library) details
         parent_details = get_item_details(parent_id)
         if parent_details and "Items" in parent_details and parent_details["Items"]:
             parent_item = parent_details["Items"][0]
             return parent_item.get("Name")
-    
+
     except Exception as e:
         logging.warning(f"Failed to extract library name from item details: {e}")
         return None
-    
+
     return None
 
 
 def is_leaving_soon_library(library_name):
     """
     Detect if a library name indicates "leaving soon" status.
-    
+
     Performs case-insensitive search for "leaving soon" in the library name.
-    
+
     Args:
         library_name: The library/collection name to check
-    
+
     Returns:
         bool: True if library name contains "leaving soon", False otherwise
     """
     if not library_name:
         return False
-    
+
     return "leaving soon" in library_name.lower()
 
 
@@ -469,7 +469,9 @@ def announce_new_releases_from_jellyfin():
                 try:
                     library_name = extract_library_name(season_details)
                 except Exception as e:
-                    logging.warning(f"Failed to fetch library information for season {series_name_cleaned} {season}: {e}")
+                    logging.warning(
+                        f"Failed to fetch library information for season {series_name_cleaned} {season}: {e}"
+                    )
 
                 is_leaving_soon = is_leaving_soon_library(library_name)
 
@@ -577,7 +579,9 @@ def announce_new_releases_from_jellyfin():
                     try:
                         library_name = extract_library_name(file_details)
                     except Exception as e:
-                        logging.warning(f"Failed to fetch library information for episode {series_name} S{season_num}E{season_epi}: {e}")
+                        logging.warning(
+                            f"Failed to fetch library information for episode {series_name} S{season_num}E{season_epi}: {e}"
+                        )
 
                     is_leaving_soon = is_leaving_soon_library(library_name)
 

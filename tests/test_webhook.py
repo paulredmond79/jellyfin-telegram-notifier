@@ -296,8 +296,15 @@ class TestWebhookLeavingSoon:
     @patch("app.get_youtube_trailer_url")
     @patch("app.mark_item_as_notified")
     def test_movie_webhook_leaving_soon(
-        self, mock_mark, mock_youtube, mock_get_details, mock_telegram, client,
-        sample_movie_payload, mock_jellyfin_item_details, mock_jellyfin_leaving_soon_library_details
+        self,
+        mock_mark,
+        mock_youtube,
+        mock_get_details,
+        mock_telegram,
+        client,
+        sample_movie_payload,
+        mock_jellyfin_item_details,
+        mock_jellyfin_leaving_soon_library_details,
     ):
         """Test movie notification includes leaving soon warning."""
         # First call: get item details with parent, second call: get library details
@@ -331,8 +338,14 @@ class TestWebhookLeavingSoon:
     @patch("app.get_item_details")
     @patch("app.mark_item_as_notified")
     def test_season_webhook_leaving_soon(
-        self, mock_mark, mock_get_details, mock_telegram, client,
-        sample_season_payload, mock_jellyfin_item_details, mock_jellyfin_leaving_soon_library_details
+        self,
+        mock_mark,
+        mock_get_details,
+        mock_telegram,
+        client,
+        sample_season_payload,
+        mock_jellyfin_item_details,
+        mock_jellyfin_leaving_soon_library_details,
     ):
         """Test season notification includes leaving soon warning."""
         # For season: season details (with parent), series details
@@ -345,7 +358,11 @@ class TestWebhookLeavingSoon:
                 }
             ]
         }
-        mock_get_details.side_effect = [item_with_parent, {"Items": [{"Overview": "Series info"}]}, mock_jellyfin_leaving_soon_library_details]
+        mock_get_details.side_effect = [
+            item_with_parent,
+            {"Items": [{"Overview": "Series info"}]},
+            mock_jellyfin_leaving_soon_library_details,
+        ]
         mock_telegram.return_value = Mock(status_code=200)
 
         response = client.post("/webhook", data=json.dumps(sample_season_payload), content_type="application/json")
@@ -365,8 +382,13 @@ class TestWebhookLeavingSoon:
     @patch("app.get_item_details")
     @patch("app.mark_item_as_notified")
     def test_episode_webhook_leaving_soon(
-        self, mock_mark, mock_get_details, mock_telegram, client,
-        sample_episode_payload, mock_jellyfin_leaving_soon_library_details
+        self,
+        mock_mark,
+        mock_get_details,
+        mock_telegram,
+        client,
+        sample_episode_payload,
+        mock_jellyfin_leaving_soon_library_details,
     ):
         """Test episode notification includes leaving soon warning."""
         # For episode: episode details, season details, library details
@@ -410,8 +432,14 @@ class TestWebhookLeavingSoon:
     @patch("app.get_youtube_trailer_url")
     @patch("app.mark_item_as_notified")
     def test_movie_webhook_library_name_displayed(
-        self, mock_mark, mock_youtube, mock_get_details, mock_telegram, client,
-        sample_movie_payload, mock_jellyfin_library_details
+        self,
+        mock_mark,
+        mock_youtube,
+        mock_get_details,
+        mock_telegram,
+        client,
+        sample_movie_payload,
+        mock_jellyfin_library_details,
     ):
         """Test movie notification displays library name."""
         # First call: get item details with parent, second call: get library details
